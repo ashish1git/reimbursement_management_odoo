@@ -260,7 +260,13 @@ function ApprovalFlowTab() {
           description: f.description || '',
           isManagerApproverFirst: f.isManagerApproverFirst,
           isSequential: f.isSequential !== undefined ? f.isSequential : true,
-          steps: f.steps || [],
+          steps: (f.steps || []).map((s) => ({
+            stepOrder: s.stepOrder,
+            approverRole: s.approverRole || null,
+            approverId: s.approverId?._id || s.approverId || '', // Extract _id if populated object
+            label: s.label || '',
+            isRequired: s.isRequired || false,
+          })),
           rule: {
             type: f.rule?.type || 'NONE',
             percentageThreshold: f.rule?.percentageThreshold || 60,
