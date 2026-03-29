@@ -71,7 +71,15 @@ function UsersTab() {
     try {
       const res = await userApi.sendCredentials(id, reset);
       const previewUrl = res.data?.data?.previewUrl;
-      toast.success(`Credentials sent to ${email}!`);
+      const emailSent = res.data?.data?.sent;
+      
+      if (emailSent) {
+        toast.success(`Credentials sent to ${email}!`);
+      } else {
+        // Email failed but user exists
+        toast.error('Email failed to send. User created but credentials not delivered.');
+      }
+      
       if (previewUrl) {
         // Dev mode — open Ethereal preview
         window.open(previewUrl, '_blank');

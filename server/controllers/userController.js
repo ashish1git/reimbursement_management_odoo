@@ -90,6 +90,10 @@ export const sendCredentials = asyncHandler(async (req, res) => {
     await user.save();
   }
 
+  let emailSent = false;
+  let previewUrl = null;
+  let emailError = null;
+
   try {
     const result = await emailService.sendCredentials({
       name: user.name,
@@ -98,14 +102,24 @@ export const sendCredentials = asyncHandler(async (req, res) => {
       companyName: company?.name || 'Your Company',
       role: user.role,
     });
-
-    res.json(new ApiResponse(200, {
-      sent: true,
-      previewUrl: result.previewUrl || null,
-    }, `Credentials sent to ${user.email}`));
+    emailSent = true;
+    previewUrl = result.previewUrl || null;
   } catch (err) {
-    throw new ApiError(500, `Failed to send email: ${err.message}`);
+    // Email failed but user exists — don't throw error, just log it
+    console.error('Failed to send credentials email:', err.message);
+    emailError = err.message;
   }
+
+  // Always return success since user was created
+  const message = emailSent 
+    ? `Credentials sent to ${user.email}` 
+    : `User created successfully, but email delivery failed. Please share credentials manually.`;
+
+  res.json(new ApiResponse(200, {
+    sent: emailSent,
+    previewUrl,
+    emailError,
+  }, message));
 });
 
 // PATCH /api/users/:id/role — Admin changes a user's role
