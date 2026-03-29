@@ -178,15 +178,21 @@ async function processApproval(expenseId, approverId, action, comment = '') {
       actedAt: new Date(),
     });
 
-    // REJECTION: if required approver rejects OR if action is REJECTED
+    // REJECTION handling in PARALLEL mode
     if (action === APPROVAL_ACTIONS.REJECTED) {
-      // If the rejecting step is required → auto-reject immediately
       if (applicableStep.isRequired) {
+        // Required approver rejects → immediate rejection
         expense.status = EXPENSE_STATUS.REJECTED;
         await expense.save();
         return { expense, log };
+      } else {
+        // Non-required approver rejects → flag as "Needs Review" (FLAGGED)
+        // so admin is alerted and can override or acknowledge.
+        // We do NOT silently ignore it — that would confuse the rejecting approver.
+        expense.status = EXPENSE_STATUS.FLAGGED;
+        await expense.save();
+        return { expense, log };
       }
-      // Non-required rejection is recorded but doesn't immediately reject
     }
 
     // Check all logs to see if we should auto-approve
@@ -219,6 +225,9 @@ async function processApproval(expenseId, approverId, action, comment = '') {
   }
 
   // ── SEQUENTIAL MODE ────────────────────────────────────────────────────────
+  // NOTE: In sequential mode, ADMIN bypass is intentionally DISABLED.
+  // Admins must use the /override endpoint to force-approve/reject.
+  // This ensures the sequential chain is always respected.
   const currentStepDef = expense.resolvedSteps[expense.currentStep];
   if (!currentStepDef) {
     throw new ApiError(400, 'Invalid approval step — flow may be complete');
@@ -228,13 +237,14 @@ async function processApproval(expenseId, approverId, action, comment = '') {
   const approverIdStr = approverId.toString();
   const isCorrectApprover = currentStepDef.approverId?.toString() === approverIdStr;
   const isCorrectRole = !currentStepDef.approverId && currentStepDef.role === approver?.role;
-  const isAdmin = approver?.role === ROLES.ADMIN;
 
-  if (!isCorrectApprover && !isCorrectRole && !isAdmin) {
+  // SEQUENTIAL: No admin bypass — admins must use the override endpoint
+  if (!isCorrectApprover && !isCorrectRole) {
     throw new ApiError(
       403,
       `You are not the designated approver for step ${expense.currentStep + 1}. ` +
-      `Waiting for: ${currentStepDef.label || currentStepDef.role || 'assigned approver'}`
+      `Waiting for: ${currentStepDef.label || currentStepDef.role || 'assigned approver'}. ` +
+      `Admins: use the Override action to bypass the sequential flow.`
     );
   }
 

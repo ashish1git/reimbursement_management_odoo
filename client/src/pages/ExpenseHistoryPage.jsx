@@ -9,7 +9,7 @@ import toast from 'react-hot-toast';
 import {
   Receipt, ChevronDown, ChevronUp, AlertTriangle, RefreshCw,
   Send, Pencil, ExternalLink, Clock, CheckCircle2, XCircle,
-  ChevronRight, Download,
+  ChevronRight, Download, RotateCcw, Info,
 } from 'lucide-react';
 
 // ─── Summary pipeline banner ─────────────────────────────
@@ -56,7 +56,10 @@ function PipelineBanner({ expenses, currency }) {
 function ExpenseRow({ expense, companyCurrency, onSubmitDraft, onRefresh }) {
   const [expanded, setExpanded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [resubmitting, setResubmitting] = useState(false);
   const isDraft = expense.status === 'DRAFT';
+  const isRejected = expense.status === 'REJECTED';
+  const isFlagged = expense.status === 'FLAGGED';
 
   const handleSubmitDraft = async () => {
     if (!confirm('Submit this draft for approval?')) return;
@@ -69,6 +72,21 @@ function ExpenseRow({ expense, companyCurrency, onSubmitDraft, onRefresh }) {
       toast.error(err.response?.data?.message || 'Failed to submit');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // FLAW #4: Resubmit after rejection
+  const handleResubmit = async () => {
+    if (!confirm('Resubmit this rejected expense for a fresh approval cycle?')) return;
+    setResubmitting(true);
+    try {
+      await expenseApi.resubmit(expense._id, {});
+      toast.success('Expense resubmitted! A new approval cycle has started.');
+      onRefresh();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to resubmit');
+    } finally {
+      setResubmitting(false);
     }
   };
 
@@ -191,6 +209,20 @@ function ExpenseRow({ expense, companyCurrency, onSubmitDraft, onRefresh }) {
             </a>
           )}
 
+          {/* FLAW #5: Visual explanation for FLAGGED (non-required rejection) */}
+          {isFlagged && (
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 mb-4 flex items-start gap-2">
+              <Info className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-semibold text-orange-700">Needs Admin Review</p>
+                <p className="text-xs text-orange-600 mt-0.5">
+                  A non-required approver flagged this expense. An admin will review and make the final decision.
+                  You will be notified when a decision is made.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Draft submit button */}
           {isDraft && (
             <button
@@ -201,6 +233,33 @@ function ExpenseRow({ expense, companyCurrency, onSubmitDraft, onRefresh }) {
               {submitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
               Submit for Approval
             </button>
+          )}
+
+          {/* FLAW #4: Resubmit button for rejected expenses */}
+          {isRejected && (
+            <div className="mt-2">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-3 flex items-start gap-2">
+                <XCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-semibold text-red-700">This expense was rejected</p>
+                  <p className="text-xs text-red-600 mt-0.5">
+                    You can correct any issues and resubmit for a fresh approval cycle.
+                    The previous approval history will be cleared.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleResubmit}
+                disabled={resubmitting}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-all disabled:opacity-60"
+                id={`resubmit-btn-${expense._id}`}
+              >
+                {resubmitting
+                  ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  : <RotateCcw className="w-3.5 h-3.5" />}
+                Resubmit for Approval
+              </button>
+            </div>
           )}
         </div>
       )}

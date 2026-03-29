@@ -186,7 +186,7 @@ export const getPendingExpenses = asyncHandler(async (req, res) => {
   res.json(new ApiResponse(200, pending, 'Pending expenses fetched'));
 });
 
-// GET /api/expenses/all — Admin views all company expenses
+// GET /api/expenses/all — Admin views ALL company expenses (ADMIN only)
 export const getAllExpenses = asyncHandler(async (req, res) => {
   const { status, category, userId: filterUserId } = req.query;
   const filter = { companyId: req.user.companyId._id };
@@ -206,6 +206,49 @@ export const getAllExpenses = asyncHandler(async (req, res) => {
     .sort({ submittedAt: -1, createdAt: -1 });
 
   res.json(new ApiResponse(200, expenses, 'All expenses fetched'));
+});
+
+// GET /api/expenses/team — Manager views ONLY their direct reports' expenses
+export const getTeamExpenses = asyncHandler(async (req, res) => {
+  const { status, category } = req.query;
+
+  // Find all users who have this manager as their managerId
+  const teamMembers = await User.find({
+    companyId: req.user.companyId._id,
+    managerId: req.user._id,
+  }).select('_id');
+
+  if (teamMembers.length === 0) {
+    return res.json(new ApiResponse(200, [], 'No direct reports found'));
+  }
+
+  const teamIds = teamMembers.map((u) => u._id);
+
+  const filter = {
+    companyId: req.user.companyId._id,
+    userId: { $in: teamIds },
+    status: { $ne: EXPENSE_STATUS.DRAFT }, // never show teammates' drafts
+  };
+
+  if (status && status !== EXPENSE_STATUS.DRAFT) filter.status = status;
+  if (category) filter.category = category;
+
+  const expenses = await Expense.find(filter)
+    .populate('userId', 'name email role managerId')
+    .populate('approvalFlowId')
+    .sort({ submittedAt: -1, createdAt: -1 });
+
+  // Enrich with approval logs
+  const enriched = await Promise.all(
+    expenses.map(async (exp) => {
+      const logs = await ApprovalLog.find({ expenseId: exp._id })
+        .populate('approverId', 'name email role')
+        .sort({ stepOrder: 1, actedAt: 1 });
+      return { ...exp.toObject(), approvalLogs: logs };
+    })
+  );
+
+  res.json(new ApiResponse(200, enriched, 'Team expenses fetched'));
 });
 
 // GET /api/expenses/:id — Single expense detail
@@ -296,6 +339,58 @@ export const overrideExpense = asyncHandler(async (req, res) => {
     comment || ''
   );
   res.json(new ApiResponse(200, expense, `Expense ${action}D by admin override`));
+});
+
+// POST /api/expenses/:id/resubmit — Employee resubmits a REJECTED expense
+export const resubmitExpense = asyncHandler(async (req, res) => {
+  const expense = await Expense.findOne({
+    _id: req.params.id,
+    userId: req.user._id,
+    status: EXPENSE_STATUS.REJECTED,
+  });
+
+  if (!expense) throw new ApiError(404, 'Rejected expense not found or not yours');
+
+  // Optionally update fields before resubmission
+  const { amount, currency, category, description, date, paidBy, remarks } = req.body;
+  if (amount) expense.amount = parseFloat(amount);
+  if (currency) expense.currency = currency.toUpperCase();
+  if (category) expense.category = category;
+  if (description) expense.description = description;
+  if (date) expense.date = new Date(date);
+  if (paidBy) expense.paidBy = paidBy;
+  if (remarks !== undefined) expense.remarks = remarks;
+
+  // Re-run currency conversion
+  const companyCurrency = req.user.companyId.defaultCurrency;
+  const { convertedAmount, rate } = await currencyService.convertToCompanyCurrency(
+    expense.amount,
+    expense.currency,
+    companyCurrency
+  );
+  expense.convertedAmount = convertedAmount;
+  expense.exchangeRateUsed = rate;
+
+  // Clear old approval flow data for fresh re-run
+  expense.status = EXPENSE_STATUS.PENDING;
+  expense.submittedAt = new Date();
+  expense.currentStep = 0;
+  expense.resolvedSteps = [];
+  expense.approvalFlowId = null;
+  expense.fraudFlags = [];
+  await expense.save();
+
+  // Remove old approval logs for this expense (clean slate)
+  await ApprovalLog.deleteMany({ expenseId: expense._id });
+
+  // Re-run fraud + initiate fresh approval flow
+  await processSubmission(expense, req.user);
+
+  const populated = await Expense.findById(expense._id)
+    .populate('userId', 'name email')
+    .populate('approvalFlowId');
+
+  res.json(new ApiResponse(200, populated, 'Expense resubmitted for approval'));
 });
 
 // GET /api/expenses/approval-history — All expenses this approver has previously actioned

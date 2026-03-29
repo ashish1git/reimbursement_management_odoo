@@ -26,16 +26,21 @@ export const expenseApi = {
   getPending: () => api.get('/expenses/pending'),
   getApprovalHistory: () => api.get('/expenses/approval-history'),
   getAll: (params) => api.get('/expenses/all', { params }),
+  // FLAW #1: Manager-scoped team expenses (direct reports only)
+  getTeam: (params) => api.get('/expenses/team', { params }),
   getById: (id) => api.get(`/expenses/${id}`),
   approve: (id, comment) => api.patch(`/expenses/${id}/approve`, { comment }),
   reject: (id, comment) => api.patch(`/expenses/${id}/reject`, { comment }),
   override: (id, action, comment) => api.post(`/expenses/${id}/override`, { action, comment }),
+  // FLAW #4: Resubmit a rejected expense
+  resubmit: (id, data) => api.post(`/expenses/${id}/resubmit`, data || {}),
   exportCsv: (params) =>
     api.get('/expenses/export', {
       params,
       responseType: 'blob',
     }),
 };
+
 
 export const approvalFlowApi = {
   get: () => api.get('/approval-flow'),

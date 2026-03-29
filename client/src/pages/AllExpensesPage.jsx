@@ -3,25 +3,32 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { expenseApi } from '../api/index.js';
 import { formatCurrency, formatDate, CATEGORY_ICONS } from '../utils/helpers.js';
 import StatusBadge from '../components/ui/StatusBadge.jsx';
-import { Download, Filter, AlertTriangle } from 'lucide-react';
+import { Download, Filter, AlertTriangle, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function AllExpensesPage() {
-  const { companyCurrency } = useAuth();
+  const { companyCurrency, isAdmin, isManager } = useAuth();
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ status: '', category: '' });
 
+  // FLAW #1: MANAGER sees only their direct reports' expenses
+  // ADMIN sees all company expenses
   const load = useCallback(async () => {
     try {
-      const res = await expenseApi.getAll(filters);
+      let res;
+      if (isManager) {
+        res = await expenseApi.getTeam(filters);
+      } else {
+        res = await expenseApi.getAll(filters);
+      }
       setExpenses(res.data.data || []);
     } catch {
       // silent
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, isAdmin, isManager]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -43,13 +50,28 @@ export default function AllExpensesPage() {
     return <div className="h-64 rounded-2xl skeleton" />;
   }
 
+  const pageTitle = isManager ? 'My Team Expenses' : 'All Expenses';
+  const pageSubtitle = isManager
+    ? `Showing expenses from your direct reports (${expenses.length} records)`
+    : `${expenses.length} records across the company`;
+
   return (
     <div className="animate-fade-in">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">All Expenses</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{expenses.length} records</p>
+          <div className="flex items-center gap-2">
+            {isManager && <Users className="w-5 h-5 text-indigo-500" />}
+            <h1 className="text-xl font-bold text-slate-800">{pageTitle}</h1>
+          </div>
+          <p className="text-sm text-slate-500 mt-0.5">{pageSubtitle}</p>
+          {isManager && (
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 mt-2 inline-flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Scoped to your direct reports only. Contact Admin to view all company expenses.
+            </p>
+          )}
         </div>
+
         <div className="flex gap-2 flex-wrap">
           <select
             className="input-base !py-2 !text-xs w-auto"
