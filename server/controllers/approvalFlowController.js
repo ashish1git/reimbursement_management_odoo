@@ -28,18 +28,33 @@ export const upsertApprovalFlow = asyncHandler(async (req, res) => {
     rule,
   } = req.body;
 
+  // Validate steps and rule data
+  if (!steps || !Array.isArray(steps)) {
+    throw new ApiError(400, 'Steps must be a non-empty array');
+  }
+
+  if (!rule || typeof rule !== 'object') {
+    throw new ApiError(400, 'Rule must be a valid object');
+  }
+
   const update = {
     name: name || 'Default Approval Flow',
     description: description || '',
     isManagerApproverFirst: isManagerApproverFirst !== undefined ? isManagerApproverFirst : true,
     isSequential: isSequential !== undefined ? isSequential : true,
-    steps: (steps || []).map((s, i) => ({
-      stepOrder: i,
-      approverRole: s.approverRole || null,
-      approverId: s.approverId || null,
-      label: s.label || `Step ${i + 1}`,
-      isRequired: s.isRequired || false,
-    })),
+    steps: steps.map((s, i) => {
+      // Validate ObjectId format if approverId is provided
+      if (s.approverId && !s.approverId.match(/^[0-9a-fA-F]{24}$/)) {
+        throw new ApiError(400, `Invalid approverId format in step ${i + 1}`);
+      }
+      return {
+        stepOrder: i,
+        approverRole: s.approverRole || null,
+        approverId: s.approverId || null,
+        label: s.label || `Step ${i + 1}`,
+        isRequired: s.isRequired || false,
+      };
+    }),
     rule: {
       type: rule?.type || 'NONE',
       percentageThreshold: Number(rule?.percentageThreshold) || 60,
@@ -47,13 +62,26 @@ export const upsertApprovalFlow = asyncHandler(async (req, res) => {
     },
   };
 
-  const flow = await ApprovalFlow.findOneAndUpdate(
-    { companyId: req.user.companyId },
-    update,
-    { upsert: true, new: true }
-  )
-    .populate('steps.approverId', 'name email role')
-    .populate('rule.specificApproverId', 'name email role');
+  // Validate percentage if rule type is PERCENTAGE
+  if (update.rule.type === 'PERCENTAGE' && (update.rule.percentageThreshold < 0 || update.rule.percentageThreshold > 100)) {
+    throw new ApiError(400, 'Percentage threshold must be between 0 and 100');
+  }
 
-  res.json(new ApiResponse(200, flow, 'Approval flow saved'));
+  try {
+    const flow = await ApprovalFlow.findOneAndUpdate(
+      { companyId: req.user.companyId },
+      update,
+      { upsert: true, new: true, runValidators: true }
+    )
+      .populate('steps.approverId', 'name email role')
+      .populate('rule.specificApproverId', 'name email role');
+
+    res.json(new ApiResponse(200, flow, 'Approval flow saved successfully'));
+  } catch (err) {
+    if (err.name === 'ValidationError') {
+      const messages = Object.values(err.errors).map((e) => e.message);
+      throw new ApiError(400, `Validation failed: ${messages.join(', ')}`);
+    }
+    throw err;
+  }
 });
