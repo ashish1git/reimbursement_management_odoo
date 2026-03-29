@@ -70,7 +70,12 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
 // Serve uploaded receipts as static files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Note: For production on Render, use cloud storage (AWS S3, Cloudinary, etc.)
+// Local uploads example: http://localhost:5000/uploads/receipts/receipt-xxx.jpg
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  maxAge: '24h',
+  etag: false,
+}));
 
 // Health check
 app.get('/api/health', (req, res) => {

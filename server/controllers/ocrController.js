@@ -1,14 +1,25 @@
 import multer from 'multer';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
 import ApiResponse from '../utils/ApiResponse.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import ocrService from '../services/ocrService/index.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 // Configure multer for receipt uploads
+const uploadsDir = path.join(__dirname, '..', 'uploads', 'receipts');
+
+// Ensure directory exists
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/receipts/');
+    cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
