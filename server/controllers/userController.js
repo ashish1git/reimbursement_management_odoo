@@ -50,6 +50,7 @@ export const createUser = asyncHandler(async (req, res) => {
 
   // Auto-send credentials email to newly created user
   const company = await Company.findById(req.user.companyId);
+  let emailSent = false;
   try {
     await emailService.sendCredentials({
       name: user.name,
@@ -58,13 +59,17 @@ export const createUser = asyncHandler(async (req, res) => {
       companyName: company?.name || 'Your Company',
       role: user.role,
     });
+    emailSent = true;
   } catch (err) {
     console.error('Failed to send credentials email:', err.message);
     // Don't block user creation if email fails — log warning but continue
   }
 
   const populatedUser = await User.findById(user._id).select('-password').populate('managerId', 'name email');
-  res.status(201).json(new ApiResponse(201, populatedUser, 'User created successfully. Credentials email sent.'));
+  const message = emailSent
+    ? 'User created successfully. Credentials email sent.'
+    : 'User created successfully. (Credentials email failed - admin can retry)';
+  res.status(201).json(new ApiResponse(201, populatedUser, message));
 });
 
 // POST /api/users/:id/send-credentials — Admin sends login credentials via email
