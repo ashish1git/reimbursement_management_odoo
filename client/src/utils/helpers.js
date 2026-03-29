@@ -87,7 +87,7 @@ export const CATEGORIES = [
 ];
 
 // Paid by options
-export const PAID_BY_OPTIONS = ['Personal', 'Company Card', 'Company Account'];
+export const PAID_BY_OPTIONS = ['Employee', 'Company'];
 
 // Expense status colors
 export const STATUS_COLORS = {

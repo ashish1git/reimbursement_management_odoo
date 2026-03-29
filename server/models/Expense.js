@@ -47,7 +47,10 @@ const expenseSchema = new mongoose.Schema(
     },
     paidBy: {
       type: String,
-      enum: PAID_BY_OPTIONS,
+      enum: {
+        values: PAID_BY_OPTIONS,
+        message: `paidBy must be one of: ${PAID_BY_OPTIONS.join(', ')}`,
+      },
       default: 'Employee',
     },
     remarks: {
