@@ -33,7 +33,7 @@ const httpServer = createServer(app);
 // Socket.io setup for real-time notifications
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: process.env.CLIENT_URL || 'https://reimburseiq.vercel.app/',
     credentials: true,
   },
 });
